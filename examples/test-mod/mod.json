@@ -1,0 +1,7 @@
+{
+	"version": "0.0.1",
+	"name": "Test Mod",
+	"author": "Sam Leeway",
+	"main": "main.js",
+	"priority": 10
+}
