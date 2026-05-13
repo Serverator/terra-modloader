@@ -1,4 +1,4 @@
-console.debug("Initializing TerraML...");
+console.debug("[TerraML] Initializing TerraML...");
 
 // Hook into 'bundle.js' script initialization to inject our modloader goodness
 new MutationObserver(function (mutations, observer) {
@@ -39,7 +39,7 @@ new MutationObserver(function (mutations, observer) {
 
 					window.__webpack_modules__ = __webpack_require__.m;
 
-					console.debug("Webpack successfully injected!");
+					console.debug("[TerraML] Webpack successfully injected!");
 					buildModuleResolver();
 					load_mods();
 				});
