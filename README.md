@@ -41,7 +41,7 @@ To create your brand new mod you'll need to create a starting file `main.js` and
 }
 ```
 
-A very basic mod example is available [here](examples/test-mod)!
+Mod examples are available [here](examples)!
 
 ### Enabling debug console
 To debug your mod you will need to enable chrome DevTools. To do that, you need to install SDK build of NW.js. You can check current version of NW.js in the title screen of the game. 
@@ -54,7 +54,7 @@ Unpack it into a root directory of the game. Now you can press F12 to open DevTo
 
 Right now it's early days of Alabaster Dawn modding and developing a mod requires looking at a massive WebPack `bundle.js` file provided by the game. 
 
-A way to unpack the code back into different readable files is still in development at [webpack-debundler](https://github.com/Serverator/webpack-debundler) repo. It's very rough and undocumented, but works in a pinch.
+A way to unpack the code back into different readable files is still in development.
 
 > If anyone knows a way to connect source maps to unpacked files, hit me up! I will be really greatful!
 

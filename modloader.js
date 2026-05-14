@@ -1,5 +1,7 @@
 console.debug("[TerraML] Initializing TerraML...");
 
+window.terraML = {};
+
 // Hook into 'bundle.js' script initialization to inject our modloader goodness
 new MutationObserver(function (mutations, observer) {
 	for (const { addedNodes } of mutations) {
@@ -40,63 +42,88 @@ new MutationObserver(function (mutations, observer) {
 					window.__webpack_modules__ = __webpack_require__.m;
 
 					console.debug("[TerraML] Webpack successfully injected!");
-					buildModuleResolver();
-					load_mods();
+					setupWebpackExports();
+					loadMods();
 				});
 		}
 	}
 }).observe(document.documentElement, { childList: true, subtree: true });
 
 // Parses webpack modules to make module imports way simpler
-function buildModuleResolver() {
+function setupWebpackExports() {
 
-	// List of files and available exports for them
-	// "player_model.js" -> { id, exports: { g_player: "w", ... } }
-	const exportMap = {};
-	const idMap = {};
-	window.webpack_exports = exportMap;
-	window.webpack_ids = idMap;
+	const fileExports = {};
+	const moduleExports = {};
+	const globalExports = {};
 
+	// Parse all webpack modules
 	for (const [id, factory] of Object.entries(__webpack_require__.m)) {
-		const src = factory.toString();
+		const moduleCode = factory.toString();
 
-		// Extract all source filenames (concatenated modules have multiple)
-		const files = [...src.matchAll(/\/\/# sourceMappingURL=(.+?)\.map/g)]
-			.map(m => m[1].split("/").pop()); // basename only: "player.js"
+		const fileMarkers = [];
+		for (const match of moduleCode.matchAll(/\/\/# sourceMappingURL=(.+?)\.map/g)) {
+			fileMarkers.push({ pos: match.index, file: match[1].split("/").pop() });
+		}
 
-		if (!files.length) continue;
+		if (!fileMarkers.length) continue;
 
-		// Extract minifiedKey -> realName from __webpack_require__.d(...)
-		const exports = {};
-		for (const block of src.matchAll(/__webpack_require__\.d\(__webpack_exports__,\s*\{([\s\S]*?)\}\s*\)/g)) {
+		// Get all exports of a module
+		const _moduleExports = {};
+		for (const block of moduleCode.matchAll(/__webpack_require__\.d\(__webpack_exports__,\s*\{([\s\S]*?)\}\s*\)/g)) {
 			for (const [, minKey, realName] of block[1].matchAll(
 				/(\w+)\s*:\s*\(\s*\)\s*=>\s*\(?(?:\/\*[^*]*\*\/\s*)?(\w+)\)?/g
 			)) {
-				exports[realName] = minKey;
+				_moduleExports[realName] = minKey;
 			}
 		}
 
-		// All filenames in a concatenated module share the same exports
-		for (const file of files) {
-			exportMap[file] = { id, exports };
-			idMap[id] = { id, exports };
+		const _fileExports = {};
+		if (fileMarkers.length == 1) {
+			_fileExports[fileMarkers[0].file] = { ..._moduleExports };
+		} else if (fileMarkers.length > 1) {
+			for (const [realName, minKey] of Object.entries(_moduleExports)) {
+				// Find the declaration of this name in the source
+				const match = new RegExp(`(?:var|let|const|function\\*?|class)\\s+${realName}[\\s=({]`).exec(moduleCode);
+
+				if (!match) continue;
+
+				const fileMarker = fileMarkers.find(m => m.pos > match.index);
+				if (!fileMarker) continue;
+
+				(_fileExports[fileMarker.file] ??= {})[realName] = minKey;
+			}
+		};
+
+		for (const fileMarker of fileMarkers) {
+			const exports = _fileExports?.[fileMarker.file] ?? _moduleExports;
+			fileExports[fileMarker.file] = { id, exports };
+		}
+
+		moduleExports[id] = { id, exports: _moduleExports };
+
+		// Also set global exports
+		const raw = __webpack_require__(id);
+		for (const [realName, minKey] of Object.entries(_moduleExports)) {
+			Object.defineProperty(globalExports, realName, {
+				get: () => raw[minKey],
+				enumerable: true,
+				configurable: true
+			});
 		}
 	}
 
-	// Add function terra_require(module) to global space
-	// `module` can be a file name, path or webpack id (NOT RECOMMENDED)
-	window.terra_require = function terra_require(query) {
-		let entry;
+	window.terraML["global"] = globalExports;
 
-		if (typeof query === "number" || /^\d+$/.test(query)) {
-			entry = idMap[+query];
-			// Fall back to raw if module has no sourcemap/exports info
-			if (!entry) return __webpack_require__(+query);
+	// Module require function
+	function moduleRequire(query) {
+		let entry;
+		if (typeof query === "number") {
+			entry = idMap[query];
+			if (!entry) return __webpack_require__(query);
 		} else {
 			const filename = query.split("/").pop().replace(/\.js$/, "") + ".js";
 			entry = exportMap[filename];
 		}
-
 		if (!entry) throw new Error(`[TerraML] Module not found: ${query}`);
 
 		const raw = __webpack_require__(entry.id);
@@ -109,11 +136,31 @@ function buildModuleResolver() {
 			});
 		}
 		return result;
-	};
+	}
+
+	// Attach each module as a property on module_require
+	for (const [file, entry] of Object.entries(fileExports)) {
+		const base = file.replace(/\.js$/, "");
+		const camel = base.replace(/[-_]./g, m => m[1].toUpperCase());
+
+		const raw = __webpack_require__(entry.id);
+		const result = {};
+		for (const [realName, minKey] of Object.entries(entry.exports)) {
+			Object.defineProperty(result, realName, {
+				get: () => raw[minKey],
+				enumerable: true,
+				configurable: true
+			});
+		}
+
+		Object.defineProperty(moduleRequire, camel, { get: () => result, enumerable: true, configurable: true });
+	}
+
+	window.terraML["get"] = moduleRequire;
 }
 
 // Reads the directories and loads the mods one by one
-function load_mods() {
+function loadMods() {
 	const fs = require('fs');
 	const path = require('path');
 
