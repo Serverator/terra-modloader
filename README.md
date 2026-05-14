@@ -6,7 +6,7 @@ TerraModloader (or just TerraML) is a modloader for Alabaster Dawn. It's as simp
 
 #### Current supported version of the game: **0.1.0-7**
 
-It should technically work even for never versions of the game, but don't be surprised if it doesn't
+It should technically work even for newer versions of the game, but don't be surprised if it doesn't
 
 ## Installation
 
