@@ -1,18 +1,19 @@
-// Ported from Jetpack mod on Selene modloader
+// Ported Jetpack mod on Selene modloader
 // Thanks to 2767mr for the original code and idea
 
-// Imports are made with `terraML.get` or `terraML.global`
-// `terraML.get` - you need to specify a game file to look for imports in. More stable and recommended method
-// `terraML.global` - already have all imports at rool level. Some imports might override each other
+// Imports are made with `terra.file` or `terra.export`
+// `terra.file` - you need to specify a game file to look for imports in. More stable and recommended method
+// `terra.export` - already have all imports at rool level. Some imports might override each other
 
-const { Observable } = terraML.get.observer;
-const { g_addons } = terraML.get.addons;
+const { Observable } = terra.file.observer;
+const { g_addons } = terra.file.addons;
 
 // We need to create a new addon for the game and insert it into convenient `AddonManager`
 class Jetpack extends Observable {
 	onDeferredUpdate() {
-  		if (terraML.global.g_input.bindings.actions.get("dash").isActive()) {
-      		terraML.global.g_player.entity.actor.doJump(10, 10, 10);
+		if (terra.export.g_input.bindings.actions.get("dash").isActive()) {
+			if (terra.export.g_player.entity)
+      			terra.export.g_player.entity.actor.doJump(10, 10, 10);
     	}
 	}
 }
