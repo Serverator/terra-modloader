@@ -1,7 +1,66 @@
 console.debug("[TerraML] Initializing TerraML...");
 
 window.terra ??= {};
-terra.internal ??= {}; 
+terra.internal ??= {};
+
+function injectAndRunGame(code) {
+	terra.internal.bundle_src_original = code;
+
+	let injectSuccessful = false;
+
+	// Export __webpack_require__ to be used outside of the webpack file
+	code = code.replace(/;\/\/\s*(?:\.\.\/)*terra\/js\/game\/index\.js/, (match) => {
+		injectSuccessful = true;
+		return match + `\nwindow.__webpack_require__ = __webpack_require__;\nterra.internal._pre_start();`;
+	});
+
+	if (!injectSuccessful) {
+		console.error("[TerraML] Failed to inject webpack!")
+	}
+
+	// Turn unused webpack module exports into real exports
+	// Enjoy more open modding capabilities!
+	code = code.replace(
+		/\/\* unused harmony exports? (.*?) \*\//g,
+		(match, names) => {
+			const additions = names.split(",")
+				.map(n => n.trim())
+				.map(n => `${n}: () => ${n}`)
+				.join(", ");
+			return `${match}\n__webpack_require__.d(__webpack_exports__, { ${additions} });`;
+		}
+	);
+
+	code += "\n//# sourceURL=dist/bundle.js";
+
+	terra.internal.bundle_src = code;
+
+	console.debug("[TerraML] Webpack successfully injected!");
+
+	// Run the original game
+	eval(code);
+}
+
+/** Run this function right before `startGame()` is called, but after webpack is initialized  */
+function preGameStart() {
+	window.__webpack_modules__ = __webpack_require__.m;
+
+	try {
+		setupWebpackExports();
+		loadMods();
+	} catch (err) {
+		console.error(`[TerraML] Unexpected error encountered':`, err);
+	}
+}
+
+terra.internal._pre_start = preGameStart;
+
+/** Appends addon to the game's AddonManager */
+function addAddon(addon, orders = {}) {
+	terra.export.g_addons.add({ addon, orders });
+}
+
+terra.addAddon = addAddon;
 
 // Hook into 'bundle.js' script initialization to inject our modloader goodness
 new MutationObserver(function (mutations, observer) {
@@ -16,51 +75,12 @@ new MutationObserver(function (mutations, observer) {
 
 			fetch(src)
 				.then(r => r.text())
-				.then(code => {
-
-					terra.internal.bundle_src_original = code;
-
-					let injectSuccessful = false;
-
-					// Export __webpack_require__ to be used outside of the webpack file
-					code = code.replace(/__webpack_require__\s*\.\s*m\s*=\s*__webpack_modules__\s*;?/, (match) => {
-						injectSuccessful = true;
-						return match + "\nwindow.__webpack_require__ = __webpack_require__;";
-					});
-
-					if (!injectSuccessful) {
-						console.error("[TerraML] Failed to inject webpack!")
-					}
-
-					// Turn unused webpack module exports into real exports
-					// Enjoy more open modding capabilities!
-					code = code.replace(
-						/\/\* unused harmony exports? (.*?) \*\//g,
-						(match, names) => {
-							const additions = names.split(",")
-								.map(n => n.trim())
-								.map(n => `${n}: () => ${n}`)
-								.join(", ");
-							return `${match}\n__webpack_require__.d(__webpack_exports__, { ${additions} });`;
-						}
-					);
-
-					terra.internal.bundle_src = code;
-
-					// Run the original game
-					eval(code);
-
-					window.__webpack_modules__ = __webpack_require__.m;
-
-					console.debug("[TerraML] Webpack successfully injected!");
-					setupWebpackExports();
-					loadMods();
-				});
+				.then(code => injectAndRunGame(code));
 		}
 	}
 }).observe(document.documentElement, { childList: true, subtree: true });
 
-// Parses webpack modules to expose game exports
+/** Parses webpack modules to expose game exports  */
 function setupWebpackExports() {
 	const fileExports = {};  // "player.js" -> { id, exports: { realName -> minKey }, result }
 	terra.internal.fileExports = fileExports;
@@ -149,13 +169,11 @@ function setupWebpackExports() {
 	console.debug("[TerraML] Webpack exports set up!");
 }
 
-// Reads the directories and loads the mods one by one
+/** Reads the directories and loads the mods one by one */
 function loadMods() {
 	const fs   = require("fs");
 	const path = require("path");
-
-	console.debug("[TerraML] Started mod loading");
-
+	
 	const modDirectory = "./mods";
 
 	if (!fs.existsSync(modDirectory)) {
@@ -168,7 +186,7 @@ function loadMods() {
 		const folderPath = path.join(modDirectory, folder);
 		if (!fs.statSync(folderPath).isDirectory()) continue;
 
-		const manifestPath = path.join(folderPath, "mod.json");
+		const manifestPath = path.join(folderPath, "manifest.json");
 		if (!fs.existsSync(manifestPath)) continue;
 
 		try {

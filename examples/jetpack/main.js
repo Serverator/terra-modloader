@@ -18,11 +18,6 @@ class Jetpack extends Observable {
 	}
 }
 
-var jetpack = new Jetpack();
-
-// This addon adding will be simplified in future versions
-var addon = { addon: jetpack, orders: {} };
-g_addons.add(addon);
-g_addons.onDeferredUpdate.push(jetpack);
+terra.addAddon(new Jetpack());
 
 //# sourceURL=mods/jetpack/main.js
