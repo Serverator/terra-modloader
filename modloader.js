@@ -8,10 +8,15 @@ function injectAndRunGame(code) {
 
 	let injectSuccessful = false;
 
+	code = code.replace(/\(\(\)\s*=>\s*\{\s*\/\/\s*webpackBootstrap/, () => {
+    	injectSuccessful = true;
+     	return "( async () => { // webpackBootstrap";
+	});
+
 	// Export __webpack_require__ to be used outside of the webpack file
 	code = code.replace(/;\/\/\s*(?:\.\.\/)*terra\/js\/game\/index\.js/, (match) => {
 		injectSuccessful = true;
-		return match + `\nwindow.__webpack_require__ = __webpack_require__;\nterra.internal._pre_start();`;
+		return match + `\nwindow.__webpack_require__ = __webpack_require__;\nawait terra.internal._pre_start();`;
 	});
 
 	if (!injectSuccessful) {
@@ -37,17 +42,19 @@ function injectAndRunGame(code) {
 
 	console.debug("[TerraML] Webpack successfully injected!");
 
-	// Run the original game
-	eval(code);
+	// Run the original game as ES module
+	const blob = new Blob([code], { type: "text/javascript" });
+	const url = URL.createObjectURL(blob);
+	import(url).finally(() => URL.revokeObjectURL(url));
 }
 
 /** Run this function right before `startGame()` is called, but after webpack is initialized  */
-function preGameStart() {
+async function preGameStart() {
 	window.__webpack_modules__ = __webpack_require__.m;
 
 	try {
 		setupWebpackExports();
-		loadMods();
+		await loadMods();
 	} catch (err) {
 		console.error(`[TerraML] Unexpected error encountered':`, err);
 	}
@@ -170,7 +177,7 @@ function setupWebpackExports() {
 }
 
 /** Reads the directories and loads the mods one by one */
-function loadMods() {
+async function loadMods() {
 	const fs   = require("fs");
 	const path = require("path");
 	
@@ -193,7 +200,7 @@ function loadMods() {
 			const manifest  = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
 			manifest.name   = manifest.name || folder;
 			manifest.main   = manifest.main || "main.js";
-			manifest.path   = path.join(folderPath, manifest.main);
+			manifest.path   = path.resolve(folderPath, manifest.main);
 			modManifests.push(manifest);
 		} catch (err) {
 			console.warn(`[TerraML] Failed to load mod in ${folderPath}:`, err);
@@ -212,7 +219,8 @@ function loadMods() {
 		}
 		try {
 			console.debug(`[TerraML] Loading mod: ${manifest.name} (ver. ${manifest.version})`);
-			eval(fs.readFileSync(manifest.path, "utf8"));
+			const fileUrl = "file://" + manifest.path.replace(/\\/g, "/");
+			await import(fileUrl);
 			console.debug(`[TerraML] Loaded: ${manifest.name}`);
 			loadedMods++;
 		} catch (err) {
