@@ -3,14 +3,30 @@ console.debug("[TerraML] Initializing TerraML...");
 window.terra ??= {};
 terra.internal ??= {};
 
+/** Run this function right before `startGame()` is called, but after webpack is initialized  */
+async function preGameStart() {
+	window.__webpack_modules__ = __webpack_require__.m;
+
+	try {
+		setupWebpackExports();
+
+		await loadMods();
+	} catch (err) {
+		console.error(`[TerraML] Unexpected error encountered':`, err);
+	}
+
+}
+
+terra.internal._pre_start = preGameStart;
+
 function injectAndRunGame(code) {
 	terra.internal.bundle_src_original = code;
 
 	let injectSuccessful = false;
 
 	code = code.replace(/\(\(\)\s*=>\s*\{\s*\/\/\s*webpackBootstrap/, () => {
-    	injectSuccessful = true;
-     	return "( async () => { // webpackBootstrap";
+		injectSuccessful = true;
+		return "( async () => { // webpackBootstrap";
 	});
 
 	// Export __webpack_require__ to be used outside of the webpack file
@@ -26,7 +42,18 @@ function injectAndRunGame(code) {
 	// Turn unused webpack module exports into real exports
 	// Enjoy more open modding capabilities!
 	code = code.replace(
-		/\/\* unused harmony exports? (.*?) \*\//g,
+		/\/\*\s*unused harmony exports?\s*(.*?) \*\//g,
+		(match, names) => {
+			const additions = names.split(",")
+				.map(n => n.trim())
+				.map(n => `${n}: () => ${n}`)
+				.join(", ");
+			return `${match}\n__webpack_require__.d(__webpack_exports__, { ${additions} });`;
+		}
+	);
+
+	code = code.replace(
+		/\/\/\s*UNUSED EXPORTS:\s*(.*?)\s*$/gm,
 		(match, names) => {
 			const additions = names.split(",")
 				.map(n => n.trim())
@@ -47,20 +74,6 @@ function injectAndRunGame(code) {
 	const url = URL.createObjectURL(blob);
 	import(url).finally(() => URL.revokeObjectURL(url));
 }
-
-/** Run this function right before `startGame()` is called, but after webpack is initialized  */
-async function preGameStart() {
-	window.__webpack_modules__ = __webpack_require__.m;
-
-	try {
-		setupWebpackExports();
-		await loadMods();
-	} catch (err) {
-		console.error(`[TerraML] Unexpected error encountered':`, err);
-	}
-}
-
-terra.internal._pre_start = preGameStart;
 
 /** Appends addon to the game's AddonManager */
 function addAddon(addon, orders = {}) {
@@ -178,9 +191,9 @@ function setupWebpackExports() {
 
 /** Reads the directories and loads the mods one by one */
 async function loadMods() {
-	const fs   = require("fs");
+	const fs = require("fs");
 	const path = require("path");
-	
+
 	const modDirectory = "./mods";
 
 	if (!fs.existsSync(modDirectory)) {
@@ -197,10 +210,10 @@ async function loadMods() {
 		if (!fs.existsSync(manifestPath)) continue;
 
 		try {
-			const manifest  = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-			manifest.name   = manifest.name || folder;
-			manifest.main   = manifest.main || "main.js";
-			manifest.path   = path.resolve(folderPath, manifest.main);
+			const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+			manifest.name = manifest.name || folder;
+			manifest.main = manifest.main || "main.js";
+			manifest.path = path.resolve(folderPath, manifest.main);
 			modManifests.push(manifest);
 		} catch (err) {
 			console.warn(`[TerraML] Failed to load mod in ${folderPath}:`, err);
@@ -228,7 +241,39 @@ async function loadMods() {
 		}
 	}
 
+	terra.internal.modManifests = modManifests;
+	terra.internal.totalMods = modManifests.length;
+	terra.internal.loadedMods = loadedMods;
+
+	// Add mod counter to title screen
+	let originalStartGame = terra.export.SceneManager.prototype.startGame;
+	terra.export.SceneManager.prototype.startGame = function (...args) {
+		const titleScreenHook = terra.export.g_gui.hooks.find(hook =>
+			hook.gui && hook.gui.constructor.name === "TitleScreen"
+		);
+
+		titleScreenHook.gui.version.textBlock.setText(`${titleScreenHook.gui.version.textBlock.decoratedText} | Mods: ${loadedMods}`);
+
+		return originalStartGame.apply(this, args);
+	}
+
 	console.log(`[TerraML] Loaded mods: ${loadedMods}`);
+}
+
+const Module = require('module');
+const { fileURLToPath } = require('url');
+const path = require('path');
+
+window.makeRequire = (metaUrl) => {
+	const dir = path.dirname(fileURLToPath(metaUrl));
+	const localRequire = Module.createRequire(metaUrl);
+
+	return (id) => {
+		// Relative path → resolve from caller's directory
+		if (id.startsWith('.')) return localRequire(path.resolve(dir, id));
+		// Bare specifier (npm package or built-in) → normal resolution
+		return localRequire(id);
+	};
 }
 
 //# sourceURL=modloader.js
