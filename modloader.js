@@ -122,7 +122,7 @@ function setupWebpackExports() {
 		const _moduleExports = {};
 		for (const block of moduleCode.matchAll(/__webpack_require__\.d\(__webpack_exports__,\s*\{([\s\S]*?)\}\s*\)/g)) {
 			for (const [, minKey, realName] of block[1].matchAll(
-				/(\w+)\s*:\s*\(\s*\)\s*=>\s*\(?(?:\/\*[^*]*\*\/\s*)?(\w+)\)?/g
+				/([\w$]+)\s*:\s*\(\s*\)\s*=>\s*\(?(?:\/\*[^*]*\*\/\s*)?([\w$]+)\)?/g
 			)) {
 				_moduleExports[realName] = minKey;
 			}
