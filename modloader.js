@@ -30,7 +30,7 @@ function injectAndRunGame(code) {
 	});
 
 	// Export __webpack_require__ to be used outside of the webpack file
-	code = code.replace(/;\/\/\s*(?:\.\.\/)*terra\/js\/game\/index\.js/, (match) => {
+	code = code.replace(/(?:\.\.\/)*terra\/js\/game\/index\.js/, (match) => {
 		injectSuccessful = true;
 		return match + `\nwindow.__webpack_require__ = __webpack_require__;\nawait terra.internal._pre_start();`;
 	});
