@@ -22,21 +22,28 @@ terra.internal._pre_start = preGameStart;
 function injectAndRunGame(code) {
 	terra.internal.bundle_src_original = code;
 
-	let injectSuccessful = false;
-
-	code = code.replace(/\(\(\)\s*=>\s*\{\s*\/\/\s*webpackBootstrap/, () => {
-		injectSuccessful = true;
-		return "( async () => { // webpackBootstrap";
-	});
+	let injected = 0;
 
 	// Export __webpack_require__ to be used outside of the webpack file
 	code = code.replace(/(?:\.\.\/)*terra\/js\/game\/index\.js/, (match) => {
-		injectSuccessful = true;
-		return match + `\nwindow.__webpack_require__ = __webpack_require__;\nawait terra.internal._pre_start();`;
+		injected++;
+		return match + `\nwindow.__webpack_require__ = __webpack_require__;`;
 	});
 
-	if (!injectSuccessful) {
-		console.error("[TerraML] Failed to inject webpack!")
+	// Make startGame async and run the modloader as its first statement
+	code = code.replace(/function startGame\(([^)]*)\)\s*\{/, (match, args) => {
+		injected++;
+		return `async function startGame(${args}) {\n    await terra.internal._pre_start();`;
+	});
+
+	// Call site is in a non-async IIFE, so assign the manifest when startGame resolves
+	code = code.replace(/window\.manifest\s*=\s*startGame\(([^;]*)\);/, (match, args) => {
+		injected++;
+		return `startGame(${args}).then(m => { window.manifest = m; });`;
+	});
+
+	if (injected !== 3) {
+		console.error(`[TerraML] Injection incomplete (${injected}/4 anchors matched)!`);
 	}
 
 	// Turn unused webpack module exports into real exports
